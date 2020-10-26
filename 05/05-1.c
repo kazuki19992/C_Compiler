@@ -10,17 +10,26 @@
 /* step1, step3 */
 typedef enum {
     Digit,
+    IntNum,
     LParen,
     RParen,
     Plus,
     Minus,
     Multi,
     Div,
+    EOFToken,
+    NULLToken,
+    Symbol,
     Other
 } Kind;
 
 /* トークン */
 /* step4 */
+typedef struct {
+    Kind kind;
+    char str[TOKEN_SIZE + 1];
+    int val;
+} Token;
 
 /* グローバル変数 */
 Kind charKind[256]; /* 文字種表 */
@@ -115,8 +124,83 @@ Token nextToken(void) {
 	Token token = {NULLToken, "", 0};
 	char *pStr = token.str;
 	int val = 0;
+    char intFlg = 0;
 
 	/* step5 */
+    ch = nextChar();
+
+    // 空白の読み飛ばし
+	while (isspace(ch)) {
+		ch = nextChar();
+	}
+
+    // if(ch == NULL){
+    //     token.kind = NULLToken;
+    //     token.str = "";
+    //     token.val = 0;
+    //     return token;
+    // }
+
+    while(ch >= '0' && ch <= '9'){
+        *pStr = ch;
+        pStr++;
+        ch = nextChar();
+        intFlg = 1;
+    }
+
+    if(intFlg == 1){
+        // intだったら
+        // token = {IntNum, token.str, atoi(token.str)};
+        token.kind = IntNum;
+        val = atoi(token.str);
+        token.val = val;
+        return token;
+    }
+
+    // int以外のvalは0になる
+    token.val = val;
+    switch(ch){
+        case '(':{
+            token.kind = LParen;
+            *pStr = '(';
+            break;
+        }
+        case ')':{
+            token.kind = RParen;
+            *pStr = ')';
+            break;
+        }
+        case '+':{
+            token.kind = Plus;
+            *pStr = '+';
+            break;
+        }
+        case '-':{
+            token.kind = Minus;
+            *pStr = '-';
+            break;
+        }
+        case '*':{
+            token.kind = Multi;
+            *pStr = '*';
+            break;
+        }
+        case '/':{
+            token.kind = Div;
+            *pStr = '/';
+            break;
+        }
+        case EOF:{
+            token.kind = EOFToken;
+            *pStr = ' ';
+            break;
+        }
+        default:{
+            token.kind = Symbol;
+            *pStr = (char)ch;
+            break;
+        }
+    }
 
 	return token;
 }
