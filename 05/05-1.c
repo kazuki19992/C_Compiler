@@ -110,9 +110,10 @@ int nextChar(void) {
 
 	if (ch == EOF) { // 最後に読んだ文字がEOFならば，EOFを返す
 		return ch;
-	} 
+	}
 	ch = fgetc(fp);
-	
+
+
 	return ch;
 }
 
@@ -134,6 +135,12 @@ Token nextToken(void) {
 		ch = nextChar();
 	}
 
+    // デバッグ
+    // printf("---テスト用---\n");
+    // putchar(ch);
+    // putchar('\n');
+
+
     // if(ch == NULL){
     //     token.kind = NULLToken;
     //     token.str = "";
@@ -141,7 +148,11 @@ Token nextToken(void) {
     //     return token;
     // }
 
-    while(ch >= '0' && ch <= '9'){
+    // while(ch >= '0' && ch <= '9'){
+    while(1){
+        if(ch < '0' || ch > '9'){
+            break;
+        }
         *pStr = ch;
         pStr++;
         ch = nextChar();
@@ -150,57 +161,61 @@ Token nextToken(void) {
 
     if(intFlg == 1){
         // intだったら
-        // token = {IntNum, token.str, atoi(token.str)};
+        // 余分に読み込んだ分ひとつfpを戻す
+        fseek(fp, -1, SEEK_CUR);
         token.kind = IntNum;
         val = atoi(token.str);
-        token.val = val;
-        return token;
+        // token.val = val;
+        // return token;
+    }else{
+        switch(ch){
+            case '(':{
+                token.kind = LParen;
+                *pStr = '(';
+                break;
+            }
+            case ')':{
+                token.kind = RParen;
+                *pStr = ')';
+                break;
+            }
+            case '+':{
+                token.kind = Plus;
+                *pStr = '+';
+                break;
+            }
+            case '-':{
+                token.kind = Minus;
+                *pStr = '-';
+                break;
+            }
+            case '*':{
+                token.kind = Multi;
+                *pStr = '*';
+                break;
+            }
+            case '/':{
+                token.kind = Div;
+                *pStr = '/';
+                break;
+            }
+            case EOF:{
+                token.kind = EOFToken;
+                *pStr = ' ';
+                break;
+            }
+            default:{
+                token.kind = Symbol;
+                *pStr = (char)ch;
+                break;
+            }
+        }
     }
+
+
 
     // int以外のvalは0になる
     token.val = val;
-    switch(ch){
-        case '(':{
-            token.kind = LParen;
-            *pStr = '(';
-            break;
-        }
-        case ')':{
-            token.kind = RParen;
-            *pStr = ')';
-            break;
-        }
-        case '+':{
-            token.kind = Plus;
-            *pStr = '+';
-            break;
-        }
-        case '-':{
-            token.kind = Minus;
-            *pStr = '-';
-            break;
-        }
-        case '*':{
-            token.kind = Multi;
-            *pStr = '*';
-            break;
-        }
-        case '/':{
-            token.kind = Div;
-            *pStr = '/';
-            break;
-        }
-        case EOF:{
-            token.kind = EOFToken;
-            *pStr = ' ';
-            break;
-        }
-        default:{
-            token.kind = Symbol;
-            *pStr = (char)ch;
-            break;
-        }
-    }
 
 	return token;
 }
