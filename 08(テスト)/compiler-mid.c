@@ -17,7 +17,7 @@
 #define LINE_SIZE 128 /* 1行に含まれるトークン数の最大値 */
 #define TABLE_SIZE 64 /* 記号表が格納できるトークンの最大値 */
 #define STR(var) #var
-#define VERBOSE  /* 上記の How to compile を参照のこと */
+// #define VERBOSE  /* 上記の How to compile を参照のこと */
 
 /** 文字・トークンの種類 **/
 typedef enum {
@@ -182,9 +182,9 @@ void statement(void) {
 				// printf("Echo\n");
 			#endif
 
-			// 右辺の演算結果を保存するために変数を宣言する
-			Token var;
-			copyToken(&var, &token);
+			// // 右辺の演算結果を保存するために変数を宣言する
+			// Token var;
+			// copyToken(&var, &token);
 
 			// <expression>
 			token = nextToken();
@@ -272,7 +272,6 @@ void expression(void) {
 
 	// termは必ずひとつ以上ある
 	term();
-	token = nextToken();
 
 	switch (token.kind){
 		case Plus:
@@ -286,7 +285,6 @@ void expression(void) {
 				_depth++;
 			#endif
 			term();
-			token = nextToken();
 			evaluate(operator);
 			break;
 		}
@@ -312,7 +310,7 @@ void term(void) {
 
 	// factorは必ずひとつ以上ある
 	factor();
-	token = nextToken();
+
 
 	switch (token.kind){
 		case Multi:
@@ -326,7 +324,6 @@ void term(void) {
 				_depth++;
 			#endif
 			factor();
-			token = nextToken();
 			evaluate(operator);
 			break;
 		}
@@ -383,7 +380,12 @@ void factor(void) {
 				printf("error: ')' is expected\n");
 				exit(EXIT_SUCCESS);
 			}
-			push(token);
+
+			Token var = pop();
+
+			// printf("%d\n", var.val);
+
+			push(var);
 			break;
 		}
 		default:{
@@ -391,6 +393,8 @@ void factor(void) {
 			break;
 		}
 	}
+
+	token = nextToken();
 
 #ifdef VERBOSE
 	_depth--;
@@ -496,7 +500,7 @@ bool replaceElementOfTable(SymbolTable *st, Token t) {
             it->val = t.val;
 
 			#ifdef VERBOSE
-				_printIndent(); printf("SUCCESS!");
+				_printIndent(); printf("SUCCESS!\n");
 			#endif
 			return true;
             break; //探索終了
