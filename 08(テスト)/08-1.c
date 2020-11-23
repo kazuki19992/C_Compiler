@@ -17,15 +17,19 @@
 #define LINE_SIZE 128 /* 1行に含まれるトークン数の最大値 */
 #define TABLE_SIZE 64 /* 記号表が格納できるトークンの最大値 */
 #define STR(var) #var
-// #define VERBOSE  /* 上記の How to compile を参照のこと */
+#define VERBOSE  /* 上記の How to compile を参照のこと */
 
 /** 文字・トークンの種類 **/
 typedef enum {
 	Plus, Assign,
+	Minus, Multi, Div,
 	Digit, /* 0-9 */
 	Letter, /* _, a - z, A - Z */
 	IntNum, /* integer */
 	Variable, /* variable */
+	Echo, // 出力
+	LParen, // '('
+	RParen, // ')'
 	EOFToken, NULLToken, /* EOF, NULL */
 	Other /* 上記のいずれでもない */
 } Kind;
@@ -56,8 +60,10 @@ int _depth = 0;
 
 /* プロトタイプ宣言 */
 /** プロトタイプ宣言: 構文解析 **/
+void program(void); // プログラム
 void statement(void); /* <statement> */
 void expression(void); /* <expression> */
+void term(void); /* <term> */
 void factor(void); /* <factor> */
 void evaluate(Kind kind); /* スタックの演算 */
 void copyToken(Token *to, Token *from); /* トークンのコピー */
@@ -67,18 +73,18 @@ bool checkToken(Token *t, Kind kind); /* トークンの種類の確認 */
 void initializeTable(SymbolTable *st); /* 記号表の初期化 */
 void addTable(SymbolTable *st, Token t); /* 記号表にトークンを追加する */
 void printTable(SymbolTable *st);
-//Token searchTable(SymbolTable *st, char *name); /* 記号表の要素を取得する */
-//bool replaceElementOfTable(SymbolTable *st, Token t); /* 記号表の要素を入れ替える */
+Token searchTable(SymbolTable *st, char *name); /* 記号表の要素を取得する */
+bool replaceElementOfTable(SymbolTable *st, Token t); /* 記号表の要素を入れ替える */
 //bool containTable(SymbolTable *st, char *name); /* 記号表の要素の確認 */
 
 /** プロトタイプ宣言: 字句解析 **/
 void initializeCharKind(void);
 int nextChar(void);
 Token nextToken(void);
-void writeTokenStr(char **p, char c); 
+void writeTokenStr(char **p, char c);
 
 /** プロトタイプ宣言: スタック **/
-void push(Token t); /* スタック: push */ 
+void push(Token t); /* スタック: push */
 Token pop(void); /* スタック: pop */
 void initializeStack(void); /* スタック: スタックを初期化 */
 void printStack(void); /* スタック: スタックの内容を表示  */
@@ -126,17 +132,19 @@ int main(int argc, char *argv[]) {
 
 	/* 構文解析 */
 	token = nextToken();
-	statement();
-	if (!checkToken(&token, EOFToken)) {
-		printf("error: token(s) remaining\n");
-		exit(EXIT_SUCCESS);
-	}
+	program();
+	// if (!checkToken(&token, EOFToken)) {
+	// 	printf("error: token(s) remaining\n");
+	// 	exit(EXIT_SUCCESS);
+	// }
+	#ifdef VERBOSE
 	/* スタックの内容を表示 */
 	printf("stack:\n");
 	printStack();
 	/* 記号表を表示 */
 	printf("symbol table:\n");
 	printTable(&STable);
+	#endif
 
 	/* close file argv[1] */
 	fclose(fp);
@@ -149,6 +157,13 @@ int main(int argc, char *argv[]) {
 
 
 /* 構文解析 *******2*********3*********4*********5*********6*********7*/
+void program(void){
+	// 複数行の読み込み
+	statement();
+	if(!checkToken(&token, EOFToken)){
+		program();
+	}
+}
 
 void statement(void) {
 #ifdef VERBOSE
@@ -157,14 +172,48 @@ void statement(void) {
 #endif
 
 	/* step2 */
+#ifdef VERBOSE
+	// printf("statement------\n");
+#endif
 	switch (token.kind){
+		case Echo:{
+			// 出力
+			#ifdef VERBOSE
+				// printf("Echo\n");
+			#endif
+
+			// 右辺の演算結果を保存するために変数を宣言する
+			Token var;
+			copyToken(&var, &token);
+
+			// <expression>
+			token = nextToken();
+
+			#ifdef VERBOSE
+				// printToken(&token);
+			#endif
+			expression();			// 次の関数に任せる
+
+			// expression()の演算結果はスタックに格納されているのでpopする
+			Token calcresult;
+			calcresult = pop();
+
+			// 出力する
+			printf("%d\n", calcresult.val);
+
+			break;
+		}
 		case Variable:{
+			#ifdef VERBOSE
+				// printf("Var======\n");
+			#endif
 			// 右辺の演算結果を保存するために変数を宣言しておく
 			Token var;
 			copyToken(&var, &token);
 
 			// 次のトークンは，Assignでなければならない
 			token = nextToken();
+
 			// if(!checkToken(&token, Assign))も可。関数の意味を考える。
 			if (token.kind != Assign)
 			{
@@ -176,7 +225,7 @@ void statement(void) {
 			// <expression>
 			token = nextToken();
 			expression(); // 対応する次の関数に任せる
-			
+
 			// <expression>の演算結果(右辺)はスタックに格納されている
 			Token calcresult;
 			calcresult = pop();
@@ -192,8 +241,10 @@ void statement(void) {
 			// var.strはすでに格納されている
 
 			// 記号表にvarが登録されているかどうか調べる
-			// 記号表に登録
-			addTable(&STable, var);
+			if(!replaceElementOfTable(&STable, var)){
+				// 記号表に登録
+				addTable(&STable, var);
+			}
 			break;
 		}
 
@@ -219,15 +270,61 @@ void expression(void) {
 	/* step2 */
 	Kind operator;
 
+	// termは必ずひとつ以上ある
+	term();
+	token = nextToken();
+
+	switch (token.kind){
+		case Plus:
+		case Minus:{
+			// Plusが出てきた場合は次にもfactorが来る
+			operator = token.kind;
+			token = nextToken();
+			#ifdef VERBOSE
+				_depth--;
+				_printIndent(); printf("↪ %s\n", __func__);
+				_depth++;
+			#endif
+			term();
+			token = nextToken();
+			evaluate(operator);
+			break;
+		}
+		default:{
+			break;
+		}
+	}
+
+#ifdef VERBOSE
+	_depth--;
+	_printIndent(); printf("<- %s\n", __func__);
+#endif
+}
+
+void term(void) {
+#ifdef VERBOSE
+	_printIndent(); printf("-> %s, ", __func__); printToken(&token);
+	_depth++;
+#endif
+
+	/* step2 */
+	Kind operator;
+
 	// factorは必ずひとつ以上ある
 	factor();
 	token = nextToken();
 
 	switch (token.kind){
-		case Plus:{
+		case Multi:
+		case Div:{
 			// Plusが出てきた場合は次にもfactorが来る
 			operator = token.kind;
 			token = nextToken();
+			#ifdef VERBOSE
+				_depth--;
+				_printIndent(); printf("↪ %s\n", __func__);
+				_depth++;
+			#endif
 			factor();
 			token = nextToken();
 			evaluate(operator);
@@ -257,6 +354,38 @@ void factor(void) {
 			push(token);
 			break;
 		}
+		case Variable:{
+			// 変数の場合
+
+			Token tokenTmp = searchTable(&STable, token.str);
+
+			if(tokenTmp.kind == NULLToken){
+				// nullだった場合の処理
+				printf("\"%s\" is not in the symbol table\n", tokenTmp.str);
+				exit(EXIT_SUCCESS);
+			}
+
+			push(tokenTmp);
+			break;
+
+		}
+		case LParen:{
+			// カッコ(始)の場合
+
+			// 次のトークンは<expression>
+			token = nextToken();
+			expression();
+
+			// その次のトークンはRParenのはず
+			// token = nextToken();
+
+			if(token.kind != RParen){
+				printf("error: ')' is expected\n");
+				exit(EXIT_SUCCESS);
+			}
+			push(token);
+			break;
+		}
 		default:{
 			printf("syntax error: %s\n", token.str);
 			break;
@@ -282,7 +411,21 @@ void evaluate(Kind kind) {
 			tmp.val = t1.val + t2.val;
 			break;
 		}
-
+		case Minus: {
+			tmp.kind = IntNum;
+			tmp.val = t1.val - t2.val;
+			break;
+		}
+		case Multi: {
+			tmp.kind = IntNum;
+			tmp.val = t1.val * t2.val;
+			break;
+		}
+		case Div: {
+			tmp.kind = IntNum;
+			tmp.val = t1.val / t2.val;
+			break;
+		}
 		default: {
 			printf("error: invalid Kind");
 			exit(EXIT_SUCCESS);
@@ -339,10 +482,33 @@ void printTable(SymbolTable *st) {
 // 	return false;
 // }
 
-// bool replaceElementOfTable(SymbolTable *st, Token t) {
-// 	/* step1 */
-// 	return replaced;
-// }
+bool replaceElementOfTable(SymbolTable *st, Token t) {
+	/* step1 */
+	#ifdef VERBOSE
+        //  _printIndent(); printf("Searching %s now...\n",name);
+		printf("Replace...");
+    #endif
+
+    Token *it = st->table;
+
+    while(it != st->tail){
+        if( strcmp(it->str, t.str)  == 0){ //指定記号が見つかった
+            it->val = t.val;
+
+			#ifdef VERBOSE
+				_printIndent(); printf("SUCCESS!");
+			#endif
+			return true;
+            break; //探索終了
+        }
+        it++;
+    }
+
+    #ifdef VERBOSE
+        _printIndent(); printf("FAILED %s\n",t.str);
+    #endif
+	return false;
+}
 
 // Token searchTable(SymbolTable *st, char *name) {
 // 	/* step1 */
@@ -358,6 +524,37 @@ void printTable(SymbolTable *st) {
 // 	}
 // 	return t;
 // }
+Token searchTable(SymbolTable *st, char *name){ //st:記号表の先頭ポインタ, *name:探す記号の先頭ポインタ
+    #ifdef VERBOSE
+         _printIndent(); printf("Searching %s now...\n",name);
+    #endif
+
+    Token t = {NULLToken,"",0};
+    Token *it = st->table;
+
+    while(it != st->tail)
+    {
+        if( strcmp(it->str, name)  == 0) //指定記号が見つかった
+        {
+            t = *it;
+
+			#ifdef VERBOSE
+				printf("%s\n" ,t.str);
+				printToken(it);
+				_printIndent(); printf("find!"); printToken(&t);
+			#endif
+
+            break; //探索終了
+        }
+        it++;
+    }
+
+    #ifdef VERBOSE
+        _printIndent(); printf("Searching finished. %s\n",t.str);
+    #endif
+
+    return t; //探索結果を返す
+}
 
 
 /* 字句解析 *******2*********3*********4*********5*********6*********7*/
@@ -389,7 +586,13 @@ void initializeCharKind(void) {
 
 	/* 個々の文字の割当て */
 	charKind['+'] = Plus;
+	charKind['-'] = Minus;
+	charKind['*'] = Multi;
+	charKind['/'] = Div;
 	charKind['='] = Assign;
+	charKind['$'] = Echo;
+	charKind['('] = LParen;
+	charKind[')'] = RParen;
 }
 
 /*
@@ -411,8 +614,8 @@ int nextChar(void) {
  */
 Token nextToken(void) {
 	static int ch = ' ';
-	Token token = {NULLToken, "", 0};
-	char *pStr = token.str;
+	Token token_tmp = {NULLToken, "", 0};
+	char *pStr = token_tmp.str;
 	int val = 0;
 
 	/* 空白の読み飛ばし */
@@ -422,8 +625,8 @@ Token nextToken(void) {
 
 	/* 最後の読んだ文字がEOFの場合，EOFを表わすトークンを返す */
 	if (ch == EOF) {
-		token.kind = EOFToken;
-		return token;
+		token_tmp.kind = EOFToken;
+		return token_tmp;
 	}
 
 	/* トークンの切り出し */
@@ -434,9 +637,9 @@ Token nextToken(void) {
 				val = val * 10 + (ch - '0');
 				ch = nextChar();
 			}
-			token.kind = IntNum;
+			token_tmp.kind = IntNum;
 			writeTokenStr(&pStr, '\0');
-			token.val = val;
+			token_tmp.val = val;
 			break;
 
 		case Letter:
@@ -444,27 +647,33 @@ Token nextToken(void) {
 				writeTokenStr(&pStr, (char)ch);
 				ch = nextChar();
 			}
-			token.kind = Variable;
+			token_tmp.kind = Variable;
 			writeTokenStr(&pStr, '\0');
 			break;
 
 		case Plus:
+		case Minus:
+		case Multi:
+		case Div:
+		case Echo:
+		case LParen:
+		case RParen:
 		case Assign:
-			token.kind = charKind[ch];
+			token_tmp.kind = charKind[ch];
 			writeTokenStr(&pStr, (char)ch);
 			writeTokenStr(&pStr, '\0');
 			ch = nextChar();
 			break;
 
 		default:
-			token.kind = Other;
+			token_tmp.kind = Other;
 			writeTokenStr(&pStr, (char)ch);
 			writeTokenStr(&pStr, '\0');
 			ch = nextChar();
 			break;
 	}
 
-	return token;
+	return token_tmp;
 }
 
 void writeTokenStr(char **p, char c) {
@@ -525,9 +734,15 @@ void printToken(Token *t) {
 	printf("%s, val=%d, kind=", t->str, t->val);
 	switch (t->kind) {
 		case Plus: printf("%s", STR(Plus)); break;
+		case Minus: printf("%s", STR(Minus)); break;
+		case Multi: printf("%s", STR(Multi)); break;
+		case Div: printf("%s", STR(Div)); break;
 		case Assign: printf("%s", STR(Assign)); break;
 		case IntNum: printf("%s", STR(IntNum)); break;
 		case Variable: printf("%s", STR(Variable)); break;
+		case Echo: printf("%s", STR(Echo)); break;
+		case LParen: printf("%s", STR(LParen)); break;
+		case RParen: printf("%s", STR(RParen)); break;
 		case EOFToken: printf("%s", STR(EOFToken)); break;
 		case NULLToken: printf("%s", STR(NULLToken)); break;
 		case Other: printf("%s", STR(Other)); break;
